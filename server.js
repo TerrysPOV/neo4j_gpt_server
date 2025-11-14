@@ -101,7 +101,7 @@ app.get("/health", async (_req, res) => {
 });
 
 // --- Start server ---
-const PORT = process.env.PORT || 8089;
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Neo4j Memory Builder API running on port ${PORT}`);
 });
