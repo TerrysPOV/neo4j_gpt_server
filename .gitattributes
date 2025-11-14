@@ -1,0 +1,20 @@
+# Ensure consistent line endings across environments
+* text=auto
+
+# Force LF endings for source files
+*.js text eol=lf
+*.json text eol=lf
+*.env text eol=lf
+*.md text eol=lf
+
+# Keep binary files untouched
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+
+# Treat shell scripts and executables correctly
+*.sh text eol=lf
+
+# Improve diffs for package-lock.json and other JSON files
+*.json diff=json
