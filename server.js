@@ -48,11 +48,11 @@ app.get("/openapi.yaml", (req, res) => {
   });
 });
 
-// --- Write structured entity with dynamic labels and relationships ---
+// --- Write structured entity with dynamic labels and relationships (Neo4j 5+ Safe) ---
 app.post("/write", async (req, res) => {
   const {
     text,
-    label = "Memory", // supports: Person, Company, Project, OutreachMessage, Reply, etc.
+    label = "Memory", // Supports: Person, Company, Project, OutreachMessage, Reply, etc.
     context = {},
     relationships = [],
     mode = "create"
@@ -63,47 +63,56 @@ app.post("/write", async (req, res) => {
   try {
     const timestamp = new Date().toISOString();
 
+    // Ensure context is stored as JSON string (Neo4j can't store nested objects)
+    const contextString =
+      typeof context === "object" ? JSON.stringify(context) : String(context);
+
     // Build Cypher dynamically based on mode
     let cypher;
     if (mode === "overwrite") {
       cypher = `
         MERGE (n:${label} {text: $text})
         ON CREATE SET n.createdAt = datetime($timestamp)
-        SET n.context = $context,
+        SET n.context = $contextString,
             n.updatedAt = datetime($timestamp)
         RETURN id(n) as nodeId
       `;
     } else if (mode === "skip") {
       cypher = `
         MERGE (n:${label} {text: $text})
-        ON CREATE SET n.context = $context,
+        ON CREATE SET n.context = $contextString,
                       n.createdAt = datetime($timestamp)
         RETURN id(n) as nodeId
       `;
     } else {
       cypher = `
-        CREATE (n:${label} {text: $text, context: $context, createdAt: datetime($timestamp)})
+        CREATE (n:${label} {text: $text, context: $contextString, createdAt: datetime($timestamp)})
         RETURN id(n) as nodeId
       `;
     }
 
-    const result = await session.run(cypher, { text, context, timestamp });
+    // Execute write for node
+    const result = await session.run(cypher, { text, contextString, timestamp });
     const nodeId = result.records[0].get("nodeId").toString();
 
-    // Handle any relationships (typed + flexible)
+    // --- Handle relationships safely ---
     for (const rel of relationships) {
       const { from, to, type } = rel;
       if (!from || !to || !type) continue;
 
-      // safe-quote the relationship type and merge generic matches by text
+      // Validate relationship type (only allow uppercase letters and underscores)
+      const safeType = type.replace(/[^A-Z0-9_]/gi, "_");
+
       const relCypher = `
         MATCH (a {text: $from}), (b {text: $to})
-        MERGE (a)-[r:${type}]->(b)
-        RETURN id(r)
+        MERGE (a)-[r:${safeType}]->(b)
+        ON CREATE SET r.createdAt = datetime($timestamp)
+        RETURN id(r) as relId
       `;
-      await session.run(relCypher, { from, to });
+      await session.run(relCypher, { from, to, timestamp });
     }
 
+    // --- Respond with result ---
     res.json({ status: "ok", label, mode, nodeId });
   } catch (error) {
     console.error("Write error:", error);
