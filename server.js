@@ -16,7 +16,7 @@ app.use(cors()); // ✅ must come BEFORE routes
 // Neo4j driver setup
 const driver = neo4j.driver(
   process.env.NEO4J_URI,
-  neo4j.auth.basic(process.env.NEO4J_USERNAME, process.env.NEO4J_PASSWORD)
+  neo4j.auth.basic(process.env.NEO4J_USER, process.env.NEO4J_PASSWORD)
 );
 const db = process.env.neo4jDatabase || "neo4j";
 
