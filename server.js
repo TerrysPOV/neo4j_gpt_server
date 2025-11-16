@@ -2,6 +2,7 @@ import express from "express";
 import bodyParser from "body-parser";
 import neo4j from "neo4j-driver";
 import dotenv from "dotenv";
+import cors from "cors";
 
 dotenv.config();
 console.log('Neo4j URI:', process.env.NEO4J_URI);
@@ -99,6 +100,9 @@ app.get("/health", async (_req, res) => {
     res.status(500).json({ status: "error", error: error.message });
   }
 });
+
+// --- alow CORS) --- 
+app.use(cors());
 
 // --- Start server ---
 const PORT = process.env.PORT || 8080;
