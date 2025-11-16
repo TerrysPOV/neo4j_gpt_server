@@ -1,0 +1,144 @@
+openapi: 3.1.0
+info:
+  title: Neo4j Memory Builder API
+  version: 1.1.0
+  description: >
+    A lightweight API wrapper that connects to a Neo4j Aura instance to store and retrieve structured memory nodes
+    and relationships. Supports configurable write modes (create, skip, overwrite) and parameterized Cypher queries.
+servers:
+  - url: https://neo4j-memory-api-production.up.railway.app
+    description: Deployed memory API server
+paths:
+  /write:
+    post:
+      summary: Write structured memory to Neo4j
+      description: >
+        Create or update a Memory node in Neo4j, optionally linking it to other nodes.
+        Supports configurable modes to control behavior when a node with the same `text` already exists.
+      operationId: writeMemory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                  description: The text or name to persist as a Memory node.
+                mode:
+                  type: string
+                  enum: [create, skip, overwrite]
+                  default: create
+                  description: |
+                    Controls how existing nodes with the same `text` are handled:
+                    - `create`: Always create a new node (default)
+                    - `skip`: Create only if missing
+                    - `overwrite`: Update existing node context
+                context:
+                  type: object
+                  description: Optional metadata for the node.
+                  example:
+                    type: "Project"
+                    sessionId: "POVIEWAI_2025_11_16"
+                    owner: "Terry"
+                relationships:
+                  type: array
+                  description: Optional relationships to create between nodes.
+                  items:
+                    type: object
+                    properties:
+                      from:
+                        type: string
+                        description: The `text` value of the source node.
+                      to:
+                        type: string
+                        description: The `text` value of the target node.
+                      type:
+                        type: string
+                        description: The relationship type (e.g., CREATED, INFORMED_BY).
+              required: [text]
+      responses:
+        "200":
+          description: Memory node successfully written or updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: Operation status (`ok`, `skipped`, or `error`)
+                  mode:
+                    type: string
+                  nodeId:
+                    type: string
+                    description: ID of the created or matched node
+  /query:
+    post:
+      summary: Query Neo4j for structured memories
+      description: >
+        Execute Cypher queries against Neo4j. Supports parameterized queries and two output formats:
+        `records` (raw Neo4j structure) or `json` (parsed context objects).
+      operationId: queryMemory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cypher:
+                  type: string
+                  description: The Cypher query to run.
+                  example: "MATCH (n:Memory {text:$text}) RETURN n"
+                params:
+                  type: object
+                  description: Optional Cypher parameters.
+                  example:
+                    text: "POVIEW.AI"
+                format:
+                  type: string
+                  enum: [records, json]
+                  default: records
+                  description: Output format. Defaults to `records` (raw). Use `json` for parsed contexts.
+              required: [cypher]
+      responses:
+        "200":
+          description: Query executed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  records:
+                    type: integer
+                    description: Number of records returned
+                  format:
+                    type: string
+                    example: json
+                  results:
+                    type: array
+                    description: Array of Cypher result objects
+                    items:
+                      type: object
+  /health:
+    get:
+      summary: Health check
+      description: Verifies database connectivity.
+      operationId: healthCheck
+      responses:
+        "200":
+          description: Service health
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
