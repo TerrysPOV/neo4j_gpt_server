@@ -185,7 +185,13 @@ app.post("/query", async (req, res) => {
 });
 
 
-// --- Health check ---
+// --- Lightweight liveness check for Railway ---
+app.get("/ping", (_req, res) => {
+  res.send("pong");
+});
+
+
+// --- Full Neo4j connectivity healthcheck ---
 app.get("/health", async (_req, res) => {
   try {
     await driver.verifyConnectivity();
@@ -194,8 +200,6 @@ app.get("/health", async (_req, res) => {
     res.status(500).json({ status: "error", error: error.message });
   }
 });
-
-app.get("/ping", (_req, res) => res.send("pong"));
 
 
 // --- alow CORS) --- 
