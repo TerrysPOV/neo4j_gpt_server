@@ -74,15 +74,19 @@ app.post("/write", async (req, res) => {
         result = await session.run(
           `
           MERGE (n:Memory {text: $text})
-          ON CREATE SET n.context = $contextString, n.createdAt = datetime($timestamp)
-          RETURN id(n) as nodeId, exists(n.context) as existed
+          ON CREATE SET n.context = $contextString,
+                        n.createdAt = datetime($timestamp)
+          WITH n, n.context IS NOT NULL AS existed
+          RETURN id(n) as nodeId, existed
           `,
           { text, contextString, timestamp }
         );
-        if (result.records[0].get("existed")) {
+
+        if (result.records.length && result.records[0].get("existed")) {
           return res.json({ status: "skipped", node: text });
         }
         break;
+
       default:
         result = await session.run(
           `
