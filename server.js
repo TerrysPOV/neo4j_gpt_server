@@ -48,7 +48,7 @@ app.get("/openapi.yaml", (req, res) => {
   });
 });
 
-// --- Write structured memory with mode support ---
+// --- Write structured memory with mode support (Neo4j 5+ safe) ---
 app.post("/write", async (req, res) => {
   const { text, context = {}, relationships = [], mode = "create" } = req.body;
   const session = driver.session({ database: db });
@@ -60,17 +60,21 @@ app.post("/write", async (req, res) => {
 
     switch (mode) {
       case "overwrite":
+        // Merge node if exists, update context and timestamp
         result = await session.run(
           `
           MERGE (n:Memory {text: $text})
-          SET n.context = $contextString, n.updatedAt = datetime($timestamp)
+          SET n.context = $contextString,
+              n.updatedAt = datetime($timestamp)
           ON CREATE SET n.createdAt = datetime($timestamp)
           RETURN id(n) as nodeId
           `,
           { text, contextString, timestamp }
         );
         break;
+
       case "skip":
+        // Create node only if missing
         result = await session.run(
           `
           MERGE (n:Memory {text: $text})
@@ -81,13 +85,14 @@ app.post("/write", async (req, res) => {
           `,
           { text, contextString, timestamp }
         );
-
+        // If existed, skip relationship creation
         if (result.records.length && result.records[0].get("existed")) {
           return res.json({ status: "skipped", node: text });
         }
         break;
 
       default:
+        // Always create new node (duplicates allowed)
         result = await session.run(
           `
           CREATE (n:Memory {text: $text, context: $contextString, createdAt: datetime($timestamp)})
@@ -98,11 +103,14 @@ app.post("/write", async (req, res) => {
         break;
     }
 
+    // Get nodeId from first record
     const nodeId = result.records[0].get("nodeId").toString();
 
+    // Handle relationships
     for (const rel of relationships) {
       const { from, to, type } = rel;
       if (!from || !to || !type) continue;
+
       await session.run(
         `
         MATCH (a:Memory {text: $from}), (b:Memory {text: $to})
@@ -121,6 +129,7 @@ app.post("/write", async (req, res) => {
     await session.close();
   }
 });
+
 
 // --- Query memories (enhanced) ---
 app.post("/query", async (req, res) => {
