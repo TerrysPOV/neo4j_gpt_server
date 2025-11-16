@@ -3,44 +3,50 @@ import bodyParser from "body-parser";
 import neo4j from "neo4j-driver";
 import dotenv from "dotenv";
 import cors from "cors";
-
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
-console.log('Neo4j URI:', process.env.NEO4J_URI);
+
+console.log("Neo4j URI:", process.env.NEO4J_URI);
 const app = express();
 app.use(bodyParser.json());
+app.use(cors()); // ✅ must come BEFORE routes
 
-console.log('NEO4J_URI:', process.env.NEO4J_URI);
-console.log('NEO4J_USERNAME:', process.env.NEO4J_USERNAME);
-console.log('NEO4J_PASSWORD exists:', !!process.env.NEO4J_PASSWORD);
-
+// Neo4j driver setup
 const driver = neo4j.driver(
   process.env.NEO4J_URI,
   neo4j.auth.basic(process.env.NEO4J_USERNAME, process.env.NEO4J_PASSWORD)
 );
-
 const db = process.env.neo4jDatabase || "neo4j";
 
-
-// --- Serve OpenAPI and GPT Plugin Manifest ---
-import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
-
+// Resolve paths
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Serve ai-plugin.json manually to avoid Express dotfile blocking
+// --- Serve OpenAPI and GPT Plugin Manifest ---
 app.get("/.well-known/ai-plugin.json", (req, res) => {
-  res.sendFile(path.join(__dirname, ".well-known", "ai-plugin.json"));
+  const filePath = path.join(__dirname, ".well-known", "ai-plugin.json");
+  console.log("Serving:", filePath);
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      console.error("Error serving ai-plugin.json:", err);
+      res.status(404).send("ai-plugin.json not found");
+    }
+  });
 });
 
-// Serve openapi.yaml manually to ensure proper MIME type
 app.get("/openapi.yaml", (req, res) => {
+  const filePath = path.join(__dirname, "openapi.yaml");
+  console.log("Serving:", filePath);
   res.type("text/yaml");
-  res.sendFile(path.join(__dirname, "openapi.yaml"));
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      console.error("Error serving openapi.yaml:", err);
+      res.status(404).send("openapi.yaml not found");
+    }
+  });
 });
-
 
 // --- Write structured memory with mode support ---
 app.post("/write", async (req, res) => {
@@ -49,45 +55,35 @@ app.post("/write", async (req, res) => {
 
   try {
     let result;
-    let nodeId;
-
     const contextString = JSON.stringify(context);
     const timestamp = new Date().toISOString();
 
     switch (mode) {
       case "overwrite":
-        // Merge node if exists, update context and timestamp
         result = await session.run(
           `
           MERGE (n:Memory {text: $text})
-          SET n.context = $contextString,
-              n.updatedAt = datetime($timestamp)
+          SET n.context = $contextString, n.updatedAt = datetime($timestamp)
           ON CREATE SET n.createdAt = datetime($timestamp)
           RETURN id(n) as nodeId
           `,
           { text, contextString, timestamp }
         );
         break;
-
       case "skip":
-        // Only create if node does not exist
         result = await session.run(
           `
           MERGE (n:Memory {text: $text})
-          ON CREATE SET n.context = $contextString,
-                        n.createdAt = datetime($timestamp)
+          ON CREATE SET n.context = $contextString, n.createdAt = datetime($timestamp)
           RETURN id(n) as nodeId, exists(n.context) as existed
           `,
           { text, contextString, timestamp }
         );
-        // If existed, skip relationships
-        if (result.records.length && result.records[0].get("existed")) {
+        if (result.records[0].get("existed")) {
           return res.json({ status: "skipped", node: text });
         }
         break;
-
       default:
-        // Default = create new node always
         result = await session.run(
           `
           CREATE (n:Memory {text: $text, context: $contextString, createdAt: datetime($timestamp)})
@@ -98,13 +94,11 @@ app.post("/write", async (req, res) => {
         break;
     }
 
-    nodeId = result.records[0].get("nodeId").toString();
+    const nodeId = result.records[0].get("nodeId").toString();
 
-    // Handle relationships
     for (const rel of relationships) {
       const { from, to, type } = rel;
       if (!from || !to || !type) continue;
-
       await session.run(
         `
         MATCH (a:Memory {text: $from}), (b:Memory {text: $to})
@@ -124,7 +118,6 @@ app.post("/write", async (req, res) => {
   }
 });
 
-
 // --- Query memories (enhanced) ---
 app.post("/query", async (req, res) => {
   const { cypher, params = {}, format = "records" } = req.body;
@@ -135,47 +128,23 @@ app.post("/query", async (req, res) => {
       return res.status(400).json({ error: "Missing or invalid Cypher query string." });
     }
 
-    // Execute parameterized Cypher query
     const result = await session.run(cypher, params);
-
-    let output;
-
-    if (format === "json") {
-      // Convert records into plain JS objects
-      output = result.records.map(record => {
-        const obj = record.toObject();
-
-        for (const key in obj) {
-          // If node has 'context', attempt to parse JSON
-          if (obj[key] && obj[key].context && typeof obj[key].context === "string") {
-            try {
-              obj[key].context = JSON.parse(obj[key].context);
-            } catch {
-              // leave as-is if parsing fails
+    const output =
+      format === "json"
+        ? result.records.map((record) => {
+            const obj = record.toObject();
+            for (const key in obj) {
+              if (obj[key] && obj[key].context && typeof obj[key].context === "string") {
+                try {
+                  obj[key].context = JSON.parse(obj[key].context);
+                } catch {}
+              }
             }
-          }
+            return obj;
+          })
+        : result.records.map((record) => record.toObject());
 
-          // Convert Neo4j Integer values to JS numbers where possible
-          if (obj[key] && obj[key].low !== undefined && obj[key].high !== undefined) {
-            obj[key] = neo4j.integer.inSafeRange(obj[key])
-              ? obj[key].toNumber()
-              : obj[key].toString();
-          }
-        }
-
-        return obj;
-      });
-    } else {
-      // Default raw record format
-      output = result.records.map(record => record.toObject());
-    }
-
-    res.json({
-      status: "ok",
-      records: output.length,
-      format,
-      results: output
-    });
+    res.json({ status: "ok", records: output.length, format, results: output });
   } catch (error) {
     console.error("Query error:", error);
     res.status(500).json({ error: error.message });
@@ -184,14 +153,8 @@ app.post("/query", async (req, res) => {
   }
 });
 
-
-// --- Lightweight liveness check for Railway ---
-app.get("/ping", (_req, res) => {
-  res.send("pong");
-});
-
-
-// --- Full Neo4j connectivity healthcheck ---
+// --- Health checks ---
+app.get("/ping", (_req, res) => res.send("pong"));
 app.get("/health", async (_req, res) => {
   try {
     await driver.verifyConnectivity();
@@ -201,12 +164,6 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-
-// --- alow CORS) --- 
-app.use(cors());
-
 // --- Start server ---
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`Neo4j Memory Builder API running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Neo4j Memory Builder API running on port ${PORT}`));
