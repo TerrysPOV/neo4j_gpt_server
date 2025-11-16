@@ -123,33 +123,100 @@ app.post("/write", async (req, res) => {
 });
 
 
-// --- Query memories (enhanced) ---
+// --- Query structured entities or run custom Cypher (Neo4j 5+ Safe) ---
 app.post("/query", async (req, res) => {
-  const { cypher, params = {}, format = "records" } = req.body;
+  const {
+    cypher,
+    params = {},
+    format = "records",
+    preset = null,
+    limit = 250
+  } = req.body;
+
   const session = driver.session({ database: db });
 
   try {
-    if (!cypher || typeof cypher !== "string") {
-      return res.status(400).json({ error: "Missing or invalid Cypher query string." });
+    // --- Handle presets (shortcuts for dashboards or analytics) ---
+    let finalCypher = cypher;
+    if (!finalCypher && preset) {
+      switch (preset) {
+        case "getAllPersons":
+          finalCypher = `MATCH (p:Person) RETURN p LIMIT $limit`;
+          break;
+
+        case "getAllCompanies":
+          finalCypher = `MATCH (c:Company) RETURN c LIMIT $limit`;
+          break;
+
+        case "getGraphSnapshot":
+          finalCypher = `
+            MATCH (a)-[r]->(b)
+            RETURN a, r, b
+            LIMIT $limit
+          `;
+          break;
+
+        case "getInsights":
+          finalCypher = `
+            MATCH (i:Insight)-[rel]->(n)
+            RETURN i, rel, n
+            LIMIT $limit
+          `;
+          break;
+
+        default:
+          return res
+            .status(400)
+            .json({ error: `Unknown preset '${preset}'` });
+      }
     }
 
-    const result = await session.run(cypher, params);
-    const output =
-      format === "json"
-        ? result.records.map((record) => {
-            const obj = record.toObject();
-            for (const key in obj) {
-              if (obj[key] && obj[key].context && typeof obj[key].context === "string") {
-                try {
-                  obj[key].context = JSON.parse(obj[key].context);
-                } catch {}
-              }
-            }
-            return obj;
-          })
-        : result.records.map((record) => record.toObject());
+    if (!finalCypher || typeof finalCypher !== "string") {
+      return res
+        .status(400)
+        .json({ error: "Missing Cypher query or invalid type." });
+    }
 
-    res.json({ status: "ok", records: output.length, format, results: output });
+    // --- Prevent accidental destructive operations ---
+    const lowered = finalCypher.toLowerCase();
+    if (lowered.includes("delete") || lowered.includes("drop")) {
+      return res.status(400).json({
+        error: "Dangerous Cypher command detected. DELETE/DROP not allowed via API."
+      });
+    }
+
+    // --- Run the query ---
+    const result = await session.run(finalCypher, { ...params, limit: Number(limit) });
+
+    // --- Format output ---
+    let output;
+    if (format === "json") {
+      output = result.records.map((record) => {
+        const obj = record.toObject();
+
+        // parse context if stringified
+        for (const key in obj) {
+          if (obj[key]?.context && typeof obj[key].context === "string") {
+            try {
+              obj[key].context = JSON.parse(obj[key].context);
+            } catch {
+              /* keep as string */
+            }
+          }
+        }
+        return obj;
+      });
+    } else {
+      output = result.records.map((record) => record.toObject());
+    }
+
+    res.json({
+      status: "ok",
+      records: output.length,
+      format,
+      preset: preset || "custom",
+      results: output
+    });
   } catch (error) {
     console.error("Query error:", error);
     res.status(500).json({ error: error.message });
@@ -157,6 +224,7 @@ app.post("/query", async (req, res) => {
     await session.close();
   }
 });
+
 
 // --- Health checks ---
 app.get("/ping", (_req, res) => res.send("pong"));
