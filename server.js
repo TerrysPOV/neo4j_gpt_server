@@ -49,6 +49,14 @@ app.get("/openapi.yaml", (req, res) => {
   });
 });
 
+app.set("trust proxy", true);
+app.use((_req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  next();
+});
+
+
 // --- Write structured entity with dynamic labels and relationships (Neo4j 5+ Safe) ---
 app.post("/write", async (req, res) => {
   const {
@@ -229,11 +237,11 @@ app.post("/query", async (req, res) => {
 
 // --- Return visualization-ready graph snapshot ---
 app.post("/graph", async (req, res) => {
+  res.type("application/json");               // ✅ force JSON header
   const { limit = 500, filterLabel = null } = req.body;
   const session = driver.session({ database: db });
 
   try {
-    // optional label filter
     const labelFilter = filterLabel ? `:${filterLabel}` : "";
     const cypher = `
       MATCH (a${labelFilter})-[r]->(b)
@@ -261,7 +269,7 @@ app.post("/graph", async (req, res) => {
       links.push({ source: aId, target: bId, type: relType });
     }
 
-    res.json({
+    res.status(200).json({
       status: "ok",
       nodes: Array.from(nodes.values()),
       links
