@@ -1,0 +1,18 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "Neo4j Memory Builder API",
+  "name_for_model": "neo4j_memory_api_production_up_railway_app",
+  "description_for_human": "Write, query, and manage structured memories directly in Neo4j Aura.",
+  "description_for_model": "Provides endpoints to create, merge, and query structured memory nodes and relationships in a Neo4j Aura database. Supports configurable write modes (create, skip, overwrite) and parameterized Cypher queries with JSON or record outputs.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://neo4j-memory-api-production.up.railway.app/openapi.yaml",
+    "is_user_authenticated": false
+  },
+  "logo_url": "https://poview.ai/assets/neo4j-memory-logo.png",
+  "contact_email": "terry@poview.ai",
+  "legal_info_url": "https://poview.ai/legal"
+}
