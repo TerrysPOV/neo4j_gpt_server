@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
+import neo4j from "neo4j-driver";
 
 dotenv.config();
 
@@ -20,6 +21,9 @@ const driver = neo4j.driver(
 );
 console.log("Neo4j URI:", process.env.NEO4J_URI);
 const db = process.env.neo4jDatabase || "neo4j";
+
+const limit = neo4j.int(Math.max(0, parseInt(req.body.limit ?? 500, 10)));
+const result = await session.run(cypher, { limit });
 
 // Resolve paths
 const __filename = fileURLToPath(import.meta.url);
