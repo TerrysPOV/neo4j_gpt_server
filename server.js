@@ -237,8 +237,13 @@ app.post("/query", async (req, res) => {
 
 // --- Return visualization-ready graph snapshot ---
 app.post("/graph", async (req, res) => {
-  res.type("application/json");               // ✅ force JSON header
-  const { limit = 500, filterLabel = null } = req.body;
+  res.type("application/json");
+  const rawLimit = req.body.limit ?? 500;
+
+  // Force limit to integer and keep it safe
+  const limit = Math.max(0, parseInt(rawLimit, 10) || 0);
+  const filterLabel = req.body.filterLabel || null;
+
   const session = driver.session({ database: db });
 
   try {
@@ -248,7 +253,7 @@ app.post("/graph", async (req, res) => {
       RETURN a, type(r) AS relType, b
       LIMIT $limit
     `;
-    const result = await session.run(cypher, { limit: Number(limit) });
+    const result = await session.run(cypher, { limit });
 
     const nodes = new Map();
     const links = [];
