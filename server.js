@@ -3,11 +3,6 @@ import bodyParser from "body-parser";
 import neo4j from "neo4j-driver";
 import dotenv from "dotenv";
 import cors from "cors";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 
 dotenv.config();
@@ -27,9 +22,24 @@ const driver = neo4j.driver(
 const db = process.env.neo4jDatabase || "neo4j";
 
 
-// --- Serve static files for Developer Mode GPT Discovery ---
-app.use("/.well-known", express.static(path.join(__dirname, ".well-known")));
-app.use("/", express.static(__dirname));
+// --- Serve OpenAPI and GPT Plugin Manifest ---
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Serve ai-plugin.json manually to avoid Express dotfile blocking
+app.get("/.well-known/ai-plugin.json", (req, res) => {
+  res.sendFile(path.join(__dirname, ".well-known", "ai-plugin.json"));
+});
+
+// Serve openapi.yaml manually to ensure proper MIME type
+app.get("/openapi.yaml", (req, res) => {
+  res.type("text/yaml");
+  res.sendFile(path.join(__dirname, "openapi.yaml"));
+});
 
 
 // --- Write structured memory with mode support ---
