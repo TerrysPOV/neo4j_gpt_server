@@ -48,80 +48,63 @@ app.get("/openapi.yaml", (req, res) => {
   });
 });
 
-// --- Write structured memory with mode support (Neo4j 5+ safe) ---
+// --- Write structured entity with dynamic labels and relationships ---
 app.post("/write", async (req, res) => {
-  const { text, context = {}, relationships = [], mode = "create" } = req.body;
+  const {
+    text,
+    label = "Memory", // supports: Person, Company, Project, OutreachMessage, Reply, etc.
+    context = {},
+    relationships = [],
+    mode = "create"
+  } = req.body;
+
   const session = driver.session({ database: db });
 
   try {
-    let result;
-    const contextString = JSON.stringify(context);
     const timestamp = new Date().toISOString();
 
-    switch (mode) {
-      case "overwrite":
-        // Merge node if exists, update context and timestamp
-        result = await session.run(
-          `
-          MERGE (n:Memory {text: $text})
-          SET n.context = $contextString,
-              n.updatedAt = datetime($timestamp)
-          ON CREATE SET n.createdAt = datetime($timestamp)
-          RETURN id(n) as nodeId
-          `,
-          { text, contextString, timestamp }
-        );
-        break;
-
-      case "skip":
-        // Create node only if missing
-        result = await session.run(
-          `
-          MERGE (n:Memory {text: $text})
-          ON CREATE SET n.context = $contextString,
-                        n.createdAt = datetime($timestamp)
-          WITH n, n.context IS NOT NULL AS existed
-          RETURN id(n) as nodeId, existed
-          `,
-          { text, contextString, timestamp }
-        );
-        // If existed, skip relationship creation
-        if (result.records.length && result.records[0].get("existed")) {
-          return res.json({ status: "skipped", node: text });
-        }
-        break;
-
-      default:
-        // Always create new node (duplicates allowed)
-        result = await session.run(
-          `
-          CREATE (n:Memory {text: $text, context: $contextString, createdAt: datetime($timestamp)})
-          RETURN id(n) as nodeId
-          `,
-          { text, contextString, timestamp }
-        );
-        break;
+    // Build Cypher dynamically based on mode
+    let cypher;
+    if (mode === "overwrite") {
+      cypher = `
+        MERGE (n:${label} {text: $text})
+        ON CREATE SET n.createdAt = datetime($timestamp)
+        SET n.context = $context,
+            n.updatedAt = datetime($timestamp)
+        RETURN id(n) as nodeId
+      `;
+    } else if (mode === "skip") {
+      cypher = `
+        MERGE (n:${label} {text: $text})
+        ON CREATE SET n.context = $context,
+                      n.createdAt = datetime($timestamp)
+        RETURN id(n) as nodeId
+      `;
+    } else {
+      cypher = `
+        CREATE (n:${label} {text: $text, context: $context, createdAt: datetime($timestamp)})
+        RETURN id(n) as nodeId
+      `;
     }
 
-    // Get nodeId from first record
+    const result = await session.run(cypher, { text, context, timestamp });
     const nodeId = result.records[0].get("nodeId").toString();
 
-    // Handle relationships
+    // Handle any relationships (typed + flexible)
     for (const rel of relationships) {
       const { from, to, type } = rel;
       if (!from || !to || !type) continue;
 
-      await session.run(
-        `
-        MATCH (a:Memory {text: $from}), (b:Memory {text: $to})
+      // safe-quote the relationship type and merge generic matches by text
+      const relCypher = `
+        MATCH (a {text: $from}), (b {text: $to})
         MERGE (a)-[r:${type}]->(b)
         RETURN id(r)
-        `,
-        { from, to }
-      );
+      `;
+      await session.run(relCypher, { from, to });
     }
 
-    res.json({ status: "ok", mode, nodeId });
+    res.json({ status: "ok", label, mode, nodeId });
   } catch (error) {
     console.error("Write error:", error);
     res.status(500).json({ error: error.message });
