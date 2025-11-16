@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
-import neo4j from "neo4j-driver";
+
 
 dotenv.config();
 
@@ -21,9 +21,6 @@ const driver = neo4j.driver(
 );
 console.log("Neo4j URI:", process.env.NEO4J_URI);
 const db = process.env.neo4jDatabase || "neo4j";
-
-const limit = neo4j.int(Math.max(0, parseInt(req.body.limit ?? 500, 10)));
-const result = await session.run(cypher, { limit });
 
 // Resolve paths
 const __filename = fileURLToPath(import.meta.url);
@@ -243,9 +240,6 @@ app.post("/query", async (req, res) => {
 app.post("/graph", async (req, res) => {
   res.type("application/json");
   const rawLimit = req.body.limit ?? 500;
-
-  // Force limit to integer and keep it safe
-  const limit = Math.max(0, parseInt(rawLimit, 10) || 0);
   const filterLabel = req.body.filterLabel || null;
 
   const session = driver.session({ database: db });
@@ -257,6 +251,9 @@ app.post("/graph", async (req, res) => {
       RETURN a, type(r) AS relType, b
       LIMIT $limit
     `;
+
+    // ✅ Use Neo4j integer type for LIMIT
+    const limit = neo4j.int(Math.max(0, parseInt(rawLimit, 10) || 0));
     const result = await session.run(cypher, { limit });
 
     const nodes = new Map();
