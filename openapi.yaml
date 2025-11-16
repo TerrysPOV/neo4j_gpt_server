@@ -15,7 +15,7 @@ paths:
       description: >
         Create or update a Memory node in Neo4j, optionally linking it to other nodes.
         Supports configurable modes to control behavior when a node with the same `text` already exists.
-      operationId: writeMemory
+      operationId: write
       requestBody:
         required: true
         content:
@@ -80,7 +80,7 @@ paths:
       description: >
         Execute Cypher queries against Neo4j. Supports parameterized queries and two output formats:
         `records` (raw Neo4j structure) or `json` (parsed context objects).
-      operationId: queryMemory
+      operationId: query
       requestBody:
         required: true
         content:
@@ -129,7 +129,7 @@ paths:
     get:
       summary: Health check
       description: Verifies database connectivity.
-      operationId: healthCheck
+      operationId: health
       responses:
         "200":
           description: Service health
