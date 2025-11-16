@@ -226,6 +226,65 @@ app.post("/query", async (req, res) => {
 });
 
 
+// --- Return visualization-ready graph snapshot ---
+app.post("/graph", async (req, res) => {
+  const { limit = 500, filterLabel = null } = req.body;
+  const session = driver.session({ database: db });
+
+  try {
+    // optional label filter
+    const labelFilter = filterLabel ? `:${filterLabel}` : "";
+    const cypher = `
+      MATCH (a${labelFilter})-[r]->(b)
+      RETURN a, type(r) AS relType, b
+      LIMIT $limit
+    `;
+    const result = await session.run(cypher, { limit: Number(limit) });
+
+    const nodes = new Map();
+    const links = [];
+
+    for (const record of result.records) {
+      const a = record.get("a").properties;
+      const b = record.get("b").properties;
+      const relType = record.get("relType");
+
+      const aId = a.text;
+      const bId = b.text;
+
+      if (!nodes.has(aId))
+        nodes.set(aId, { id: aId, label: a?.label || "Node", text: a.text, context: safeParse(a.context) });
+      if (!nodes.has(bId))
+        nodes.set(bId, { id: bId, label: b?.label || "Node", text: b.text, context: safeParse(b.context) });
+
+      links.push({ source: aId, target: bId, type: relType });
+    }
+
+    res.json({
+      status: "ok",
+      nodes: Array.from(nodes.values()),
+      links
+    });
+  } catch (error) {
+    console.error("Graph query error:", error);
+    res.status(500).json({ error: error.message });
+  } finally {
+    await session.close();
+  }
+
+  function safeParse(value) {
+    if (typeof value === "string") {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return { raw: value };
+      }
+    }
+    return value || {};
+  }
+});
+
+
 // --- Health checks ---
 app.get("/ping", (_req, res) => res.send("pong"));
 app.get("/health", async (_req, res) => {

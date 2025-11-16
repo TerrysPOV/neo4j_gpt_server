@@ -1,20 +1,24 @@
 openapi: 3.1.0
 info:
-  title: Neo4j Memory Builder API
-  version: 1.1.0
+  title: POVIEW.AI Neo4j Memory Builder API
+  version: 2.0.0
   description: >
-    A lightweight API wrapper that connects to a Neo4j Aura instance to store and retrieve structured memory nodes
-    and relationships. Supports configurable write modes (create, skip, overwrite) and parameterized Cypher queries.
+    A secure API wrapper that connects to a Neo4j Aura instance to store and retrieve structured entities, relationships,
+    and insights. Supports dynamic labels (Person, Company, Project, etc.), configurable write modes, safe query execution,
+    and visualization-ready graph output for dashboards.
+
 servers:
   - url: https://neo4j-memory-api-production.up.railway.app
-    description: Deployed memory API server
+    description: Deployed Neo4j Memory API server
+
 paths:
+
   /write:
     post:
-      summary: Write structured memory to Neo4j
+      summary: Write structured entity with dynamic labels and relationships
       description: >
-        Create or update a Memory node in Neo4j, optionally linking it to other nodes.
-        Supports configurable modes to control behavior when a node with the same `text` already exists.
+        Creates or updates a node in Neo4j. Supports configurable modes (create, skip, overwrite) and optional
+        relationships between nodes.
       operationId: write
       requestBody:
         required: true
@@ -25,26 +29,31 @@ paths:
               properties:
                 text:
                   type: string
-                  description: The text or name to persist as a Memory node.
+                  description: Primary text or name of the node.
+                label:
+                  type: string
+                  default: Memory
+                  description: >
+                    Node label (e.g., Person, Company, Project, Conversation, Reply, Insight, Collateral, etc.)
                 mode:
                   type: string
                   enum: [create, skip, overwrite]
                   default: create
                   description: |
-                    Controls how existing nodes with the same `text` are handled:
-                    - `create`: Always create a new node (default)
-                    - `skip`: Create only if missing
-                    - `overwrite`: Update existing node context
+                    Controls write behavior:
+                    - `create`: Always create a new node
+                    - `skip`: Only create if missing
+                    - `overwrite`: Update if exists
                 context:
                   type: object
-                  description: Optional metadata for the node.
+                  description: Optional metadata to attach to the node.
                   example:
-                    type: "Project"
-                    sessionId: "POVIEWAI_2025_11_16"
-                    owner: "Terry"
+                    role: "CEO"
+                    company: "Oakland Care Group"
+                    sector: "Healthcare"
                 relationships:
                   type: array
-                  description: Optional relationships to create between nodes.
+                  description: Optional relationships to create.
                   items:
                     type: object
                     properties:
@@ -56,11 +65,11 @@ paths:
                         description: The `text` value of the target node.
                       type:
                         type: string
-                        description: The relationship type (e.g., CREATED, INFORMED_BY).
+                        description: The relationship type (e.g., WORKS_AT, CREATED_FOR, INFORMED_BY).
               required: [text]
       responses:
         "200":
-          description: Memory node successfully written or updated
+          description: Entity successfully written or updated
           content:
             application/json:
               schema:
@@ -68,18 +77,25 @@ paths:
                 properties:
                   status:
                     type: string
-                    description: Operation status (`ok`, `skipped`, or `error`)
+                    example: ok
+                  label:
+                    type: string
                   mode:
                     type: string
                   nodeId:
                     type: string
                     description: ID of the created or matched node
+        "400":
+          description: Invalid input or missing parameters
+        "500":
+          description: Internal server error
+
   /query:
     post:
-      summary: Query Neo4j for structured memories
+      summary: Execute Cypher queries or presets
       description: >
-        Execute Cypher queries against Neo4j. Supports parameterized queries and two output formats:
-        `records` (raw Neo4j structure) or `json` (parsed context objects).
+        Runs a Cypher query or built-in preset (e.g., `getGraphSnapshot`, `getAllPersons`, `getInsights`).
+        Supports parameter substitution and multiple output formats.
       operationId: query
       requestBody:
         required: true
@@ -90,19 +106,26 @@ paths:
               properties:
                 cypher:
                   type: string
-                  description: The Cypher query to run.
-                  example: "MATCH (n:Memory {text:$text}) RETURN n"
+                  description: Custom Cypher query to execute.
+                  example: "MATCH (p:Person)-[:WORKS_AT]->(c:Company) RETURN p,c LIMIT 50"
                 params:
                   type: object
-                  description: Optional Cypher parameters.
+                  description: Optional parameters for the Cypher query.
                   example:
-                    text: "POVIEW.AI"
+                    limit: 100
+                preset:
+                  type: string
+                  enum: [getAllPersons, getAllCompanies, getGraphSnapshot, getInsights]
+                  description: Optional named preset query.
                 format:
                   type: string
                   enum: [records, json]
-                  default: records
-                  description: Output format. Defaults to `records` (raw). Use `json` for parsed contexts.
-              required: [cypher]
+                  default: json
+                  description: Output format.
+                limit:
+                  type: integer
+                  default: 250
+                  description: Record limit for large queries.
       responses:
         "200":
           description: Query executed successfully
@@ -120,19 +143,42 @@ paths:
                   format:
                     type: string
                     example: json
+                  preset:
+                    type: string
+                    example: getGraphSnapshot
                   results:
                     type: array
-                    description: Array of Cypher result objects
                     items:
                       type: object
-  /health:
-    get:
-      summary: Health check
-      description: Verifies database connectivity.
-      operationId: health
+                      description: Cypher record or parsed JSON result
+        "400":
+          description: Invalid or unsafe query
+        "500":
+          description: Database or query error
+
+  /graph:
+    post:
+      summary: Return visualization-ready graph data
+      description: >
+        Returns compact graph data (`nodes`, `links`) suitable for dashboards and visual network tools like PyVis, D3, or Plotly.
+      operationId: graph
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                limit:
+                  type: integer
+                  default: 500
+                  description: Maximum number of relationships to return.
+                filterLabel:
+                  type: string
+                  description: Optional node label filter (e.g., "Person", "Company").
       responses:
         "200":
-          description: Service health
+          description: Graph snapshot returned
           content:
             application/json:
               schema:
@@ -141,4 +187,48 @@ paths:
                   status:
                     type: string
                     example: ok
+                  nodes:
+                    type: array
+                    description: Node array for visualization
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        label:
+                          type: string
+                        text:
+                          type: string
+                        context:
+                          type: object
+                  links:
+                    type: array
+                    description: Relationship array for visualization
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                        target:
+                          type: string
+                        type:
+                          type: string
+        "500":
+          description: Graph query error
 
+  /health:
+    get:
+      summary: Health check
+      description: Confirms database connectivity and service status.
+      operationId: health
+      responses:
+        "200":
+          description: Service operational
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
