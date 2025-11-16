@@ -18,6 +18,7 @@ const driver = neo4j.driver(
   process.env.NEO4J_URI,
   neo4j.auth.basic(process.env.NEO4J_USERNAME, process.env.NEO4J_PASSWORD)
 );
+console.log("Neo4j URI:", process.env.NEO4J_URI);
 const db = process.env.neo4jDatabase || "neo4j";
 
 // Resolve paths
