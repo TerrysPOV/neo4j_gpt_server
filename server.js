@@ -3,6 +3,12 @@ import bodyParser from "body-parser";
 import neo4j from "neo4j-driver";
 import dotenv from "dotenv";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 
 dotenv.config();
 console.log('Neo4j URI:', process.env.NEO4J_URI);
@@ -19,6 +25,12 @@ const driver = neo4j.driver(
 );
 
 const db = process.env.neo4jDatabase || "neo4j";
+
+
+// --- Serve static files for Developer Mode GPT Discovery ---
+app.use("/.well-known", express.static(path.join(__dirname, ".well-known")));
+app.use("/", express.static(__dirname));
+
 
 // --- Write structured memory with mode support ---
 app.post("/write", async (req, res) => {
