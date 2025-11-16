@@ -1,0 +1,35 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "npm install && npm run build",
+    "outputDirectory": "dist"
+  },
+  "deploy": {
+    "numReplicas": 1,
+    "healthcheckPath": "/ping",
+    "healthcheckTimeout": 5000,
+    "restartPolicyType": "ON_FAILURE",
+    "sleepAfter": null,
+    "startCommand": "node server.js"
+  },
+  "plugins": {
+    "node": {
+      "version": "20.x"
+    }
+  },
+  "env": {
+    "PORT": "8080",
+    "NEO4J_URI": "neo4j+s://b5e8ecff.databases.neo4j.io",
+    "NEO4J_USERNAME": "neo4j",
+    "NEO4J_PASSWORD": "@@RAILWAY_SECRET@@",
+    "NEO4J_DATABASE": "neo4j"
+  },
+  "service": {
+    "name": "neo4j-memory-api-production",
+    "autoDeploy": true,
+    "alwaysOn": true,
+    "regions": ["fra", "lhr", "cdg"]
+  }
+}
+
